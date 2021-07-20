@@ -1,8 +1,8 @@
 {
     "name": "file/file_chunk",
-    "description": "````````````````````````",
+    "description": "大文件分片续传,上传、下载",
     "type": "1",
-    "license": "apache",
+    "license": "proprietary",
     "require": {
         "php": ">=5.4"
     },
