@@ -1,0 +1,21 @@
+{
+    "name": "file/file_chunk",
+    "description": "````````````````````````",
+    "type": "1",
+    "license": "apache",
+    "require": {
+        "php": ">=5.4"
+    },
+    "authors": [
+        {
+            "name": "ywq",
+            "email": "729343861@qq.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "autoload": {
+        "psr-4": {
+            "FileChunk\\": "src/"
+        }
+    }
+}
