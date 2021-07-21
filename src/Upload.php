@@ -114,6 +114,17 @@ class Upload{
     }
 
     /**
+     * 生成哈希文件名
+     * @param $file_name
+     * @return string
+     */
+    private function getHash($file_name){
+
+        return hash('md5',$file_name).'.'.substr(strrchr($file_name, '.'), 1);
+
+    }
+
+    /**
      * 主处理方法
      *
      * 2021年1月25日 下午11:48
@@ -199,7 +210,7 @@ class Upload{
         if(self::$nowPackageNum === self::$totalPackageNum){
             return self::$pathFileName;
         }
-        return 'ongoing';
+        return self::$nowPackageNum;
     }
 
     /**
@@ -209,9 +220,12 @@ class Upload{
      * 2021年1月25日 下午11:56
      */
     private function mkdir(){
+
         if(!file_exists(self::$filePath)){
-            return mkdir(self::$filePath);
+            return mkdir(self::$filePath,0777,true);
         }
+
+        chmod(self::$filePath,0777);
     }
 
 }
