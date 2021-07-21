@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<body>
+<form action="http://talkapivm.com/api/file_chunk/upload">
+    <input type="file" name="file" id="file">
+</form>
+<script>
+  var uploadObj = new SegmentUpload();
+  var fileDom = document.getElementById("file");
+
+  fileDom.onchange = function(){
+    uploadObj.addFileAndSend(this);
+  };
+
+  function SegmentUpload() {
+    const length = 1024*1024*10; // 文件包大小
+    const requestUrl = 'http://talkapivm.com/api/file_chunk/upload';
+    const requestType = 'POST'; // 请求方式
+
+    var request = new XMLHttpRequest();
+    var start = 0; // 截取下标开始位置
+    var end = length; // 截取下标结束位置
+    var nowPackage=''; // 文件包
+    var nowPackageNum = 1; // 当前包数
+    var totalPackageNum = 0; // 总共包数
+    var file = null;
+
+    this.addFileAndSend = function(that){
+      file = that.files[0];
+      totalPackageNum = Math.ceil(file.size / length);
+      blob = cutFile();
+      sendFile(blob);
+      nowPackageNum += 1;
+    };
+
+    cutFile = function (){
+      nowPackage = file.slice(start, end);
+      start = end;
+      end = start + length;
+    };
+
+    //这里的demo是异步请求,在实际应用中请使用同步请求，本片请求响应处理成功后再进行下一片上传，如果本次请求失败，请重传本片。
+    sendFile = function (){
+      var formData = new FormData();
+      formData.append('file',nowPackage);
+      formData.append('now_package_num',nowPackageNum);
+      formData.append('total_package_num',totalPackageNum);
+      formData.append('file_name',file.name);
+      request.open(requestType, requestUrl, false);
+      request.onreadystatechange = function () {
+        var t = setTimeout(function(){
+          if(start < file.size){
+            blob = cutFile(file);
+            sendFile(nowPackage,file);
+            nowPackageNum += 1;
+          }else{
+            setTimeout(t);
+          }
+        },1000);
+      };
+      request.send(formData);
+    }
+  }
+
+</script>
+</body>
+</html>
