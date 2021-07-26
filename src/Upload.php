@@ -1,6 +1,6 @@
 <?php
 
-namespace FileChunk;
+namespace Yangwenqu\FileChunk;
 
 class Upload{
 

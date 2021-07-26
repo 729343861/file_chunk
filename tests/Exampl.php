@@ -1,8 +1,8 @@
 <?php
 require_once '../vendor/autoload.php';
 
-use FileChunk\Upload;
-use FileChunk\Download;
+use Yangwenqu\FileChunk\Download;
+use Yangwenqu\FileChunk\Upload;
 
 
 //分片上传
@@ -24,8 +24,8 @@ $res   = $file->upload([
 var_dump($res);die;
 
 //分片下载
-$path     = './static/CentOS-7-x86_64-Everything-2009.iso';
-$filename = 'CentOS2009.iso';
+$path     = './static/CentOS-7-x86_64-Everything-2009.iso';  //需要下载的文件目录+文件名
+$filename = 'CentOS2009.iso';                                //下载保存的文件名
 $file     = new Download();
 $file->download($path, $filename,true);
 
