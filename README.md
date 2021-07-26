@@ -1,6 +1,11 @@
+
+整合大文件分片上传,下载功能 
+
+###### * nginx配置client_max_body_size;
+###### * php配置post_max_size、upload_max_filesize、memory_limit、max_input_time
+
 分片上传
 ===============
-
 
 
  + 自定义目录
@@ -53,7 +58,7 @@ $file->download($path, $filename,true);
 
 ~~~
 
-##响应示例
+## 响应示例
 
 ~~~
 
