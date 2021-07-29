@@ -39,7 +39,8 @@ $res   = $file->upload([
     'file_name'           => $param['file_name'], // 文件名称(唯一)
     'file_path'           => './upload', // 文件存放路径
     'clear_interval_time' => 60, // 清理临时文件间隔，默认五分钟
-    'is_continuingly'     => true // 是否断点续传，默认为true
+    'is_continuingly'     => true, // 是否断点续传，默认为true
+    'tmp_file_chunk'      => '/tmp/file_chunk' // 临时分片存放目录
 ]);
 var_dump($res);
 ~~~

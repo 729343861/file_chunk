@@ -56,6 +56,12 @@ class Upload{
     private static $pathFileName;
 
     /**
+     * 临时分片目录
+     * @var
+     */
+    private static $tmpChunkPath = "/tmp/file_chunk/";
+
+    /**
      * 每次上传的临时文件
      *
      * @var
@@ -106,12 +112,16 @@ class Upload{
         if (isset($config['is_continuingly'])) {
             self::$isContinuingly = $config['is_continuingly'];
         }
+        if(isset($config['tmp_file_chunk'])){
+            self::$tmpChunkPath = $config['tmp_file_chunk'];
+        }
         self::$pathFileName = self::$filePath.'/'. self::$fileName;
-        self::$tmpPathFile = self::$pathFileName.self::FILE_SPLIT.self::$nowPackageNum;
+        self::$tmpPathFile  = self::$tmpChunkPath.'/'.self::$fileName.self::FILE_SPLIT.self::$nowPackageNum;
         $this->mkdir();
 
         return true;
     }
+
 
     /**
      * 生成哈希文件名
@@ -148,13 +158,13 @@ class Upload{
      * CreateTime: 2019/8/11 上午12:27
      */
     private function overdueFile() {
-        $files = scandir(self::$filePath);
+        $files = scandir(self::$tmpChunkPath);
         foreach ($files as $key => $val) {
             if (strpos($val,self::FILE_SPLIT) !== false) {
-                $ctime = filectime(self::$filePath.'/'.$val);
+                $ctime = filectime(self::$tmpChunkPath.'/'.$val);
                 $intervalTime = time()-$ctime+60*self::$clearIntervalTime;
                 if ($intervalTime<0) {
-                    @unlink(self::$filePath.'/'.$val);
+                    @unlink(self::$tmpChunkPath.'/'.$val);
                 }
             }
         }
@@ -169,7 +179,7 @@ class Upload{
         if(self::$nowPackageNum === self::$totalPackageNum){
             $blob = '';
             for($i=1; $i<= self::$totalPackageNum; $i++){
-                $blob = file_get_contents(self::$pathFileName.self::FILE_SPLIT.$i);
+                $blob = file_get_contents(self::$tmpChunkPath.self::$fileName.self::FILE_SPLIT.$i);
                 // 追加合并
                 file_put_contents(self::$pathFileName, $blob, FILE_APPEND);
                 unset($blob);
@@ -184,8 +194,9 @@ class Upload{
      * 2021年1月25日 下午11:59
      */
     private function deletePackage(){
+
         for($i=1; $i<= self::$totalPackageNum; $i++){
-            @unlink(self::$pathFileName.self::FILE_SPLIT.$i);
+            @unlink(self::$tmpChunkPath.self::$fileName.self::FILE_SPLIT.$i);
         }
     }
 
@@ -221,6 +232,11 @@ class Upload{
      */
     private function mkdir(){
 
+        if(!file_exists(self::$tmpChunkPath)){
+            mkdir(self::$tmpChunkPath,0777,true);
+        }else{
+            chmod(self::$tmpChunkPath,0777);
+        }
         if(!file_exists(self::$filePath)){
             return mkdir(self::$filePath,0777,true);
         }
