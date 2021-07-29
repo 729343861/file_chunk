@@ -2,6 +2,8 @@
 
 namespace Yangwenqu\FileChunk;
 
+use Predis\Client;
+
 class Upload{
 
     // 临时文件分隔符
@@ -45,7 +47,7 @@ class Upload{
      * @var mixed
      * 2021年1月25日 下午11:44
      */
-    private static $fileName; //文件名
+    private static $fileName;
 
     /**
      * 文件完全地址
@@ -70,12 +72,12 @@ class Upload{
     private static $tmpPathFile;
 
     /**
-     * 超过多长时间的临时文件清理掉
+     * 续传超时时间(超过这个时间将清理零碎分片)：分钟
      *
      * @var int
      * CreateTime: 2019/8/11 上午12:24
      */
-    private static $clearIntervalTime=5;
+    private static $clearIntervalTime= 5;
 
     /**
      * 是否断点续传
@@ -85,12 +87,35 @@ class Upload{
      */
     private static $isContinuingly=true;
 
+
+    /**
+     * 服务器预留最小空间:GB
+     * @var int
+     */
+    private static $diskMinSize = 20;
+
+    /**
+     * 默认每个分片大小
+     * @var float
+     */
+    private static $defaultChunkSize = 0.5;
+
+    /**
+     * redis对象
+     * @var object
+     */
+    private static $redis;
+
+
     /**
      * 初始化参数
      *
      * 2021年1月25日 下午11:55
      */
     public function init(array $config=[]) {
+
+        $this->checkDisk();
+
         if (isset($config['file_path'])) {
             self::$filePath = $config['file_path'];
         }
@@ -115,11 +140,105 @@ class Upload{
         if(isset($config['tmp_file_chunk'])){
             self::$tmpChunkPath = $config['tmp_file_chunk'];
         }
+        if(isset($config['redis']) && is_array($config['redis'])){
+            self::$redis = new Client($config['redis']);
+        }else{
+            throw new \Exception("缺少redis配置项");
+        }
         self::$pathFileName = self::$filePath.'/'. self::$fileName;
         self::$tmpPathFile  = self::$tmpChunkPath.'/'.self::$fileName.self::FILE_SPLIT.self::$nowPackageNum;
         $this->mkdir();
-
         return true;
+    }
+
+
+    /**
+     * 获取磁盘剩余空间
+     * @return array     array.avail 可用空间(GB), array.usage 空间使用率百分比
+     */
+    private function getDisk(){
+
+        $fp = popen('df -lh | grep -E "^(/)"',"r");
+        $rs = fread($fp,1024);
+        pclose($fp);
+        $rs = preg_replace("/\s{2,}/",' ',$rs);
+        $hd = explode(" ",$rs);
+        $hd_avail = trim($hd[3],'G');
+        $hd_usage = trim($hd[4],'%');
+
+        return ['avail'=> $hd_avail ,'usage'=> $hd_usage ];
+    }
+
+
+    public function checkDisk(){
+
+        $disk     = $this->getDisk();
+        if (($disk['avail'] <= self::$diskMinSize) ) {
+            throw new \Exception("服务器空间不足,请联系客服扩容");
+        }
+        return true;
+    }
+
+
+    /**
+     * 获取唯一文件名和分片大小 计算
+     * @param $file_size  文件总大小
+     * @param $file_name  原文件名
+     * @return bool|float[]
+     */
+    public function getChunk($file_size,$file_name){
+
+        $m = 1024 * 1024 ;
+        $g = 1024 * 1024 * 10214;
+        $data = [
+            'chunk_size' => self::$defaultChunkSize,
+        ];
+        $disk     = $this->getDisk();
+        if ($file_size > ($disk['avail'] - self::$diskMinSize) * $g) {
+            return false;
+        }
+        if ($file_size > 0.1 * $g) {
+            $data['chunk_size'] = 1;
+        }
+        if ($file_size > 1 * $g) {
+            $data['chunk_size'] = 2;
+        }
+        $file_name = hash("md5", $file_name.$file_size) . "-" . $file_name;
+        $key       = "file:" . $file_name;
+        $has       = self::$redis->get($key);
+
+        if (!$has) {
+            $data['file_name'] = $file_name;
+        } else {
+            $ext                       = substr(strrchr($file_name, '.'), 1);
+            $data['file_name'] = basename($file_name, "." . $ext) . "($has)." . $ext;
+        }
+        $lock       = "file_clear_lock:" . $data['file_name'];
+        self::$redis->setex($lock,(int)self::$clearIntervalTime * 60,time());
+        self::$redis->incr($key);
+        $data['chunk_size'] *= $m;
+
+        return $data;
+    }
+
+
+    /**
+     * 检查文件分片是否被情况
+     * @param $file_name 唯一文件名
+     * @return int 1-文件被清理，0未被清理
+     */
+    public function check($file_name){
+
+        $is_clear = 1;
+        $key      = "file_clear_lock:" . $file_name;
+        $file     = self::$redis->get($key);
+        if ($file) {
+            $is_clear = 0;
+            self::$redis->setex($key,(int)self::$clearIntervalTime * 60, time());
+
+        }
+        return $is_clear;
+
     }
 
 
@@ -242,6 +361,33 @@ class Upload{
         }
 
         chmod(self::$filePath,0777);
+    }
+
+    /**
+     * 清除超时的分片，该方法可以被定时器调用
+     */
+    public function claerChunk(){
+
+        $files          = scandir(self::$tmpChunkPath);
+        foreach ($files as $val){
+            if(in_array($val,['.','..'])){
+                continue;
+            }
+            if (strpos($val,self::FILE_SPLIT) !== false) {
+                $file_name = explode(self::FILE_SPLIT, $val)[0];
+                $key       = "file_clear_lock:" . $file_name;
+                $lock      = self::$redis->get($key);
+                if($lock){
+                    continue ;
+                }
+                $ctime = filectime(self::$tmpChunkPath.'/'.$val);
+                $intervalTime = time()- ($ctime + 60*self::$clearIntervalTime);
+                if ($intervalTime > 0) {
+                    @unlink(self::$tmpChunkPath.'/'.$val);
+                }
+            }
+        }
+
     }
 
 }
