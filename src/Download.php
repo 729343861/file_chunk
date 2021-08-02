@@ -4,7 +4,8 @@ namespace Yangwenqu\FileChunk;
 
 class Download{
 
-    private $_speed = 512;   // 下载速度
+    private $_speed = 2;   // 下载速度
+
 
     /** 下载
      * @param String  $file   要下载的文件名（包含路径）
@@ -43,13 +44,13 @@ class Download{
             }
 
             while(!feof($fp)){
-                echo fread($fp, round($this->_speed*1024,0));
+                echo fread($fp, round($this->_speed*1024*1024,0));
                 ob_flush();
-                //sleep(1); // 用于测试,减慢下载速度
+                flush();
+                sleep(1); // 每秒限速
             }
-
+            ob_end_clean();
             ($fp!=null) && fclose($fp);
-
         }else{
             return '';
         }
@@ -57,12 +58,13 @@ class Download{
 
 
     /** 设置下载速度
-     * @param int $speed
+     * @param int $speed 限速 ：MB
      */
     public function setSpeed($speed){
-        if(is_numeric($speed) && $speed>16 && $speed<4096){
+        if(is_numeric($speed)){
             $this->_speed = $speed;
         }
+        return $this;
     }
 
 

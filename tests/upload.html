@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <body>
-<form action="http://talkapivm.com/api/file_chunk/upload">
+<form action="http://192.168.10.138:9501/upload">
     <input type="file" name="file" id="file">
 </form>
 <script>
@@ -14,7 +14,7 @@
 
   function SegmentUpload() {
     const length = 1024*1024*20; // 文件包大小
-    const requestUrl = 'http://talkapivm.com/api/file_chunk/upload';
+    const requestUrl = 'http://192.168.10.138:9501/upload';
     const requestType = 'POST'; // 请求方式
 
     var request = new XMLHttpRequest();
@@ -45,7 +45,7 @@
       formData.append('file',nowPackage);
       formData.append('now_package_num',nowPackageNum);
       formData.append('total_package_num',totalPackageNum);
-      formData.append('file_name',"c4cfd1785fc353d4a27ec358b15584c9-goland-2021.1.3(18).exe");
+      formData.append('file_name',"27ad9ac14aa35137552ab038e038a6b8-a.b.c(2).exe");
       request.open(requestType, requestUrl, false);
       request.onreadystatechange = function () {
         var t = setTimeout(function(){

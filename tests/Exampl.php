@@ -93,6 +93,6 @@ $file->claerChunk();
 $path     = './static/CentOS-7-x86_64-Everything-2009.iso';  //需要下载的文件目录+文件名
 $filename = 'CentOS2009.iso';                                //下载保存的文件名
 $file     = new Download();
-$file->download($path, $filename,true);
+$file->setSpeed(2)->download($path, $filename,true);
 
 
