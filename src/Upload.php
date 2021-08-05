@@ -106,6 +106,122 @@ class Upload{
      */
     private static $redis;
 
+    const CHUNK_NUM = "file:chunk_num:%s";
+    const FILE_TOTAL_NUM = "file:total_num:%s";
+    const FILE_CLEAR_LOCK = "file:clear_lock:%s";
+    const FILE_UPLOAD_LOCK = "file:upload_lock:%s";
+
+    private function getChunkNumKey($file_name)
+    {
+        return sprintf(self::CHUNK_NUM, $file_name);
+    }
+
+    private function getTotalNumKey($file_name)
+    {
+        return sprintf(self::FILE_TOTAL_NUM, $file_name);
+    }
+
+    private function getClearLockKey($file_name)
+    {
+        return sprintf(self::FILE_CLEAR_LOCK, $file_name);
+    }
+    private function getUploadLockKey($file_name)
+    {
+        return sprintf(self::FILE_UPLOAD_LOCK, $file_name);
+    }
+
+
+    /**
+     * 获取磁盘剩余空间
+     * @return array     array.avail 可用空间(GB), array.usage 空间使用率百分比
+     */
+    private function getDisk(){
+
+        $fp = popen('df -lh | grep -E "^(/)"',"r");
+        $rs = fread($fp,1024);
+        pclose($fp);
+        $rs = preg_replace("/\s{2,}/",' ',$rs);
+        $hd = explode(" ",$rs);
+        $hd_avail = trim($hd[3],'G');
+        $hd_usage = trim($hd[4],'%');
+
+        return ['avail'=> $hd_avail ,'usage'=> $hd_usage ];
+    }
+
+
+    /**
+     * 检查服务器空间
+     * @return bool
+     * @throws \Exception
+     */
+    public function checkDisk(){
+
+        $disk     = $this->getDisk();
+        if (($disk['avail'] <= self::$diskMinSize) ) {
+            throw new \Exception("服务器空间不足,请联系客服扩容");
+        }
+        return true;
+    }
+
+    /**
+     * 记录文件总片数
+     */
+    private function setFileTotalPack(){
+        $key = $this->getTotalNumKey(self::$fileName);
+        $is_has = self::$redis->get($key);
+        if(!$is_has){
+            self::$redis->setnx($key,self::$totalPackageNum);
+        }
+    }
+
+
+    /**
+     * 获取锁
+     * @return bool
+     */
+    private function getLock(){
+
+        $islock = self::$redis->setnx($this->getUploadLockKey(self::$fileName),1);
+        if($islock){
+            self::$redis->expire($this->getUploadLockKey(self::$fileName),5);
+            return true;
+        }else{
+            $s = self::$redis->ttl($this->getUploadLockKey(self::$fileName));
+            if($s == -1){
+                $this->delLock();
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 删除锁
+     */
+    private function delLock(){
+
+        self::$redis->del($this->getUploadLockKey(self::$fileName));
+    }
+
+    /**
+     * 创建目录
+     *
+     * @return bool
+     * 2021年1月25日 下午11:56
+     */
+    private function mkdir(){
+
+        if(!file_exists(self::$tmpChunkPath)){
+            mkdir(self::$tmpChunkPath,0777,true);
+        }else{
+            chmod(self::$tmpChunkPath,0777);
+        }
+        if(!file_exists(self::$filePath)){
+            return mkdir(self::$filePath,0777,true);
+        }
+
+        chmod(self::$filePath,0777);
+    }
+
 
     /**
      * 初始化参数
@@ -145,39 +261,13 @@ class Upload{
         }else{
             throw new \Exception("缺少redis配置项");
         }
+
         self::$pathFileName = self::$filePath.'/'. self::$fileName;
         self::$tmpPathFile  = self::$tmpChunkPath.'/'.self::$fileName.self::FILE_SPLIT.self::$nowPackageNum;
-        $this->mkdir();
+
         return true;
     }
 
-
-    /**
-     * 获取磁盘剩余空间
-     * @return array     array.avail 可用空间(GB), array.usage 空间使用率百分比
-     */
-    private function getDisk(){
-
-        $fp = popen('df -lh | grep -E "^(/)"',"r");
-        $rs = fread($fp,1024);
-        pclose($fp);
-        $rs = preg_replace("/\s{2,}/",' ',$rs);
-        $hd = explode(" ",$rs);
-        $hd_avail = trim($hd[3],'G');
-        $hd_usage = trim($hd[4],'%');
-
-        return ['avail'=> $hd_avail ,'usage'=> $hd_usage ];
-    }
-
-
-    public function checkDisk(){
-
-        $disk     = $this->getDisk();
-        if (($disk['avail'] <= self::$diskMinSize) ) {
-            throw new \Exception("服务器空间不足,请联系客服扩容");
-        }
-        return true;
-    }
 
 
     /**
@@ -213,7 +303,7 @@ class Upload{
             $ext                       = substr(strrchr($file_name, '.'), 1);
             $data['file_name'] = basename($file_name, "." . $ext) . "($has)." . $ext;
         }
-        $lock       = "file_clear_lock:" . $data['file_name'];
+        $lock       = $this->getClearLockKey($data['file_name']);
         self::$redis->setex($lock,(int)self::$clearIntervalTime * 60,time());
         self::$redis->incr($key);
         $data['chunk_size'] *= $m;
@@ -230,7 +320,7 @@ class Upload{
     public function check($file_name){
 
         $is_clear = 1;
-        $key      = "file_clear_lock:" . $file_name;
+        $key      = $this->getClearLockKey($file_name);
         $file     = self::$redis->get($key);
         if ($file) {
             $is_clear = 0;
@@ -243,6 +333,62 @@ class Upload{
 
 
     /**
+     * 记录成功的片
+     */
+    private function setSuccessChunk(){
+
+        $key = $this->getChunkNumKey(self::$fileName);
+        self::$redis->zAdd($key,[self::$nowPackageNum,self::$nowPackageNum]);
+    }
+
+    /**
+     * 获取文件上传成功的片数
+     * @return mixed
+     */
+    private function getSuccessCount(){
+
+        return self::$redis->zcard($this->getChunkNumKey(self::$fileName));
+
+    }
+
+
+    /**
+     * 获取失败的片
+     * @param $file_name  唯一文件名
+     */
+    public function getFailChunk($file_name){
+
+        $chunk_num_key   = $this->getChunkNumKey($file_name);
+        $total_num_key   = $this->getTotalNumKey($file_name);
+        //成功片列表
+        $success_chunks = self::$redis->zrange($chunk_num_key,0,-1);
+        //文件最大片
+        $total_num      = self::$redis->get($total_num_key);
+        //返回缺少哪些分片
+        return ['lack_chunks'=> $this->getDiffNumbers($success_chunks,$total_num)];
+    }
+
+
+    /**
+     * 从成功记录中获取差集，也就是未成功的数
+     * @param $arr
+     * @param $total_num
+     * @return array
+     *
+     */
+    public function getDiffNumbers($arr,$total_num){
+
+        $num = [];
+        for ($i=1;$i<= $total_num ;$i++){
+            if(!in_array($i,$arr))
+            {
+                $num[] = $i;
+            }
+        }
+        return $num;
+    }
+
+    /**
      * 生成哈希文件名
      * @param $file_name
      * @return string
@@ -253,41 +399,6 @@ class Upload{
 
     }
 
-    /**
-     * 主处理方法
-     *
-     * 2021年1月25日 下午11:48
-     */
-    public function upload(array $config=[]) {
-        // 初始化必要参数
-        $this->init($config);
-        // 移动包
-        $this->movePackage();
-        // 合并包
-        $this->mergePackage();
-        // 检测并删除目录中是否存在过期临时文件
-        $this->overdueFile();
-        // 返回结果
-        return $this->result();
-    }
-
-    /**
-     * 检测并删除目录中是否存在过期临时文件
-     *
-     * CreateTime: 2019/8/11 上午12:27
-     */
-    private function overdueFile() {
-        $files = scandir(self::$tmpChunkPath);
-        foreach ($files as $key => $val) {
-            if (strpos($val,self::FILE_SPLIT) !== false) {
-                $ctime = filectime(self::$tmpChunkPath.'/'.$val);
-                $intervalTime = time()-$ctime+60*self::$clearIntervalTime;
-                if ($intervalTime<0) {
-                    @unlink(self::$tmpChunkPath.'/'.$val);
-                }
-            }
-        }
-    }
 
     /**
      * 合并包
@@ -295,7 +406,9 @@ class Upload{
      * 2021年1月25日 下午11:58
      */
     private function mergePackage(){
-        if(self::$nowPackageNum === self::$totalPackageNum){
+
+        //成功片数等于总包数时候鉴定为全部上传完成，进行合并
+        if($this->getSuccessCount() === self::$totalPackageNum){
             $blob = '';
             for($i=1; $i<= self::$totalPackageNum; $i++){
                 $blob = file_get_contents(self::$tmpChunkPath.self::$fileName.self::FILE_SPLIT.$i);
@@ -337,31 +450,53 @@ class Upload{
      * CreateTime: 2019/8/3 下午1:41
      */
     private function result(){
-        if(self::$nowPackageNum === self::$totalPackageNum){
+        if($this->getSuccessCount() === self::$totalPackageNum){
             return self::$pathFileName;
         }
         return self::$nowPackageNum;
     }
 
+
     /**
-     * 创建目录
+     * 主处理方法
      *
-     * @return bool
-     * 2021年1月25日 下午11:56
+     * 2021年1月25日 下午11:48
      */
-    private function mkdir(){
+    public function upload(array $config=[]) {
 
-        if(!file_exists(self::$tmpChunkPath)){
-            mkdir(self::$tmpChunkPath,0777,true);
-        }else{
-            chmod(self::$tmpChunkPath,0777);
-        }
-        if(!file_exists(self::$filePath)){
-            return mkdir(self::$filePath,0777,true);
+        try {
+
+            // 初始化必要参数
+            $this->init($config);
+            //获取锁,抵抗并发请求
+            $islock = $this->getLock();
+            if(!$islock){
+                throw new \Exception('上传过于频繁');
+            }
+            //创建目录
+            $this->mkdir();
+            //记录上传总片数
+            $this->setFileTotalPack();
+            // 移动包
+            $this->movePackage();
+            //记录成功片
+            $this->setSuccessChunk();
+            // 合并包
+            $this->mergePackage();
+            //释放锁
+            $this->delLock();
+            // 返回结果
+            return $this->result();
+
+        }catch (\Exception $e){
+            var_dump($e->getMessage());
+            $this->delLock();
+            return false;
         }
 
-        chmod(self::$filePath,0777);
     }
+
+
 
     /**
      * 清除超时的分片，该方法可以被定时器调用
@@ -375,7 +510,7 @@ class Upload{
             }
             if (strpos($val,self::FILE_SPLIT) !== false) {
                 $file_name = explode(self::FILE_SPLIT, $val)[0];
-                $key       = "file_clear_lock:" . $file_name;
+                $key       = $this->getClearLockKey($file_name);
                 $lock      = self::$redis->get($key);
                 if($lock){
                     continue ;

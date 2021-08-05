@@ -3,6 +3,12 @@
     "description": "大文件分片续传,上传、下载",
     "type": "library",
     "license": "MIT",
+    "keywords" : [
+        "chunk",
+        "upload",
+        "download",
+        "big_file"
+    ],
     "require": {
         "php": ">=5.4",
         "predis/predis":"v1.1.7"

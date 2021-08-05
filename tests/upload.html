@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <body>
-<form action="http://192.168.10.138:9501/upload">
+<form action="http://talkapivm.com/api/file_chunk/upload">
     <input type="file" name="file" id="file">
 </form>
 <script>
@@ -13,8 +13,8 @@
   };
 
   function SegmentUpload() {
-    const length = 1024*1024*20; // 文件包大小
-    const requestUrl = 'http://192.168.10.138:9501/upload';
+    const length = 1024*1024*1; // 文件包大小
+    const requestUrl = 'http://talkapivm.com/api/file_chunk/upload';
     const requestType = 'POST'; // 请求方式
 
     var request = new XMLHttpRequest();

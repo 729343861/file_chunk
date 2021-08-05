@@ -66,7 +66,9 @@ $res   = $file->upload([
     'is_continuingly'     => true,                              // 是否断点续传，默认为true
     'tmp_file_chunk'      => '/tmp/file_chunk'                  // 临时分片存放目录
 ]);
-if (is_string($res)){
+if(!$res){
+    return "上传失败了";
+}elseif (is_string($res)){
     return "文件合并成功";
 }else{
     return "当前分片上传成功,当前分片编号是:{$res}";
@@ -87,6 +89,17 @@ $file->init([
 ]);
 $file->claerChunk();
 
+
+//5.获取某个文件缺少的分片（用于在上传周期中进行补传分片）
+$file  = new Upload();
+$file->init([
+    'redis'               =>[
+        'scheme' => 'tcp',
+        'host'   => '127.0.0.1',
+        'port'   => 6379,
+    ],
+]);
+$file->getFailChunk('27ad9ac14aa35137552ab038e038a6b8-a.b.c.exe');
 
 
 //分片下载
